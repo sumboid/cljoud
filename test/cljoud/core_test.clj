@@ -1,6 +1,6 @@
-(ns manager.core-test
+(ns cljoud.core-test
   (:require [clojure.test :refer :all]
-            [manager.core :refer :all]))
+            [cljoud.core :refer :all]))
 
 (deftest a-test
   (testing "FIXME, I fail."
