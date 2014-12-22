@@ -1,32 +1,17 @@
-(ns framework.core)
+(ns framework.core
+  (:use [clojure.repl] :only [source-fn])
+  (:use [clojure.string :only [split]]))
 
-(defprotocol ClientProtocol
-  (sync-call-remote [this ns-name func-name params options])
-  (close [this]))
-(deftype Client [conn factory content-type options]
-  ClientProtocol
-  (sync-call-remote [this ns-name func-name params call-options]
-    (let [state (get-state factory (server-addr this))
-          fname (str ns-name "/" func-name)
-          tid (next-trans-id (:idgen state))
-          request (make-request tid content-type fname params)
-          prms (promise)]
-      (swap! (:pendings state) assoc tid {:promise prms})
-      (send conn request)
-      (deref prms (or (:timeout call-options) (:timeout options) *timeout*) nil)
-      (if (realized? prms)
-        @prms
-        (do
-          (swap! (:pendings state) dissoc tid)
-          {:cause {:error :timeout}}))))
-  (close [this]
-    (cancel-ping this)
-    (dissoc-client factory this)
-    (close conn))
+(defn cloudrc
+  "Create connection to a manager."
+  [addr]
+  (let [factory (or factory @cached-client-factory)]
+    (delay (create-client addr))))
 
 (defn process-call-result [call-result]
   (if (nil? (:cause call-result))
     (:result call-result)))
+
 (defn invoke-remote
   "Invoke remote function with given connection.
    Used exclusevely by defn-remote."
@@ -40,21 +25,19 @@
   connection and the function name."
   ([sc fname]
     (let [fname-str (str fname)
-          remote-ns-declared (> (.indexOf fname-str "/") 0)
-          [remote-ns remote-name] (if remote-ns-declared
-                                    (split fname-str #"/" 2)
-                                    [remote-ns
-                                     (or remote-name fname-str)])
-          facade-sym (if remote-ns-declared
+          ns-declared (> (.indexOf fname-str "/") 0)
+          [remote-ns remote-name] (split fname-str #"/" 2)
+          facade-sym (if ns-declared
                        (symbol remote-name)
-                       fname)]
+                       fname)
+          fsource (or (clojure.repl/source-fn fname) (throw Exception . (+ "Source not found:" fname)))]
       `(def ~facade-sym
          (with-meta
            (fn [& args#]
-             (apply invoke-remote ~sc
-               [~remote-ns ~remote-name (into [] args#)]
-               (flatten (into [] ~options))))
+             (apply invoke-remote ~sc [~remote-ns ~remote-name ~fsource (into [] args#)]))
            {:remote-fn true
             :client ~sc
             :remote-ns ~remote-ns
-            :remote-name ~remote-name})))))
+            :remote-name ~remote-name
+            :source ~fsource}
+           )))))
