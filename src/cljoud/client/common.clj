@@ -13,6 +13,8 @@
       :not-found {:cause {:error code}}
       :exception {:cause {:error code :exception (deserialize data)}}
       {:cause {:error :invalid-result-code}})))
+(defn- next-trans-id [trans-id-gen]
+  (swap! trans-id-gen unchecked-inc))
 
 (defn handle-response [response]
   (case (first response)
@@ -20,12 +22,12 @@
     :type-error {:cause {:error (-> response second first)}}
     nil))
 
-(defn make-request [tid func-name params]
+(defn make-request [tid func-name func-code params]
   (let [serialized-params (serialize params)]
-    [version tid [:type-request [func-name serialized-params]]]))
+    [tid [:type-request [func-name func-code serialized-params]]]))
 
 (defprotocol ClientProtocol
-  (sync-call-remote [this func-name params options])
+  (sync-call-remote [this func-name func-code params options])
   (close [this]))
 
 (defn- channel-hostport [ch]
@@ -35,18 +37,17 @@
 
 (deftype Client [conn]
   ClientProtocol
-  (sync-call-remote [this func-name code params call-options]
-    (let [request (make-request tid fname code params)]
+  (sync-call-remote [this func-name func-code params call-options]
+    (let [request (make-request tid func-name func-code params)
+           tid 0]
       (send conn request);; <- TODO
       (recv conn msg)
-      (let [tid (second msg)
-            msg-body (nth msg 2)
+      (let [tid (first msg)
+            msg-body (second msg)
             result (handle-response msg-body)]
         result)))
   (close [this]
-    (dissoc-client factory this)
     (close conn)))
-
 
 (defn host-port
   "get host and port from connection string"

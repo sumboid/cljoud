@@ -5,8 +5,7 @@
 (defn cloudrc
   "Create connection to a manager."
   [addr]
-  (let [factory (or factory @cached-client-factory)]
-    (delay (create-client addr))))
+  (delay (create-client addr)))
 
 (defn process-call-result [call-result]
   (if (nil? (:cause call-result))
@@ -17,8 +16,11 @@
    Used exclusevely by defn-remote."
   [sc remote-call-info]
   (let [sc @(or *sc* sc) ;; allow local binding to override client
-        [nsname fname args] remote-call-info]
-      (process-call-result (sync-call-remote sc nsname fname args options))))
+        [fname fcode args] remote-call-info]
+      (process-call-result (sync-call-remote sc fname fcode args options))))
+
+(defn rmap[f coll]
+  (f coll))
 
 (defmacro defn-remote
   "Define a facade for remote function. You have to provide the
