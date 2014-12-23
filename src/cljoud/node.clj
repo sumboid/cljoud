@@ -9,8 +9,8 @@
     result))
 (defn handle-request [msg]
   (let [tid (first msg)
-        data (second msg)
+        data (second (second msg))
         func-name (first data)
-        func-code (nth data 2)
-        params (deserialize (nth data 3))]
+        func-code (nth data 1)
+        params (deserialize (nth data 2))]
     (do-map func-name func-code params)))
