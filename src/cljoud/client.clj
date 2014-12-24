@@ -1,6 +1,7 @@
 (ns framework.core
-  (:use [clojure.repl] :only [source-fn])
-  (:use [clojure.string :only [split]]))
+  (:use [clojure.repl :only [source-fn]])
+  (:use [clojure.string :only [split]])
+  (:use [cljoud.client.common]))
 
 (defn cloudrc
   "Create connection to a manager."
@@ -15,9 +16,9 @@
   "Invoke remote function with given connection.
    Used exclusevely by defn-remote."
   [sc remote-call-info]
-  (let [sc @(or *sc* sc) ;; allow local binding to override client
-        [fname fcode args] remote-call-info]
-      (process-call-result (sync-call-remote sc fname fcode args options))))
+  ;;(let [sc @(or *sc* sc) ;; allow local binding to override client
+  ;;      [fname fcode args] remote-call-info]
+      (process-call-result (sync-call-remote sc fname fcode args options)))
 
 (defn rmap[f coll]
   (f coll))

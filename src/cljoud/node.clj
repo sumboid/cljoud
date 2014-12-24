@@ -1,5 +1,6 @@
 (ns cljoud.node
-  (:use [cljoud serialization]))
+  (:use [cljoud serialization])
+  (:use [cljoud tcp]))
 
 (defn do-map[func-name func-code params]
   (create-ns 'user)
@@ -14,3 +15,7 @@
         func-code (nth data 1)
         params (deserialize (nth data 2))]
     (do-map func-name func-code params)))
+
+(defn start-node [host-port-str]
+  (let [host port] (host-port host-port-str)
+    (start-tcp-client[host port])))

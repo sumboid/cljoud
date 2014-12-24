@@ -1,5 +1,5 @@
 (ns cljoud.client.common
-  (:use [tcp])
+  (:use [cljoud tcp])
   (:use [cljoud serialization])
   (:import [java.net ConnectException InetSocketAddress InetAddress]
            [java.nio.channels ClosedChannelException]
@@ -48,12 +48,6 @@
         result)))
   (close [this]
     (close conn)))
-
-(defn host-port
-  "get host and port from connection string"
-  [connection-string]
-  (let [[host port] (split connection-string #":")]
-    [host (Integer/valueOf ^String port)]))
 
 (defn create-client [addr]
   (let [[host port] (host-port addr)

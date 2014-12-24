@@ -6,8 +6,9 @@
   :dependencies [
                   [org.clojure/clojure "1.6.0"]
                   [cheshire "5.3.1"]]
-  :profiles {:example {:source-paths ["examples"]}}
+  :profiles {:example {:source-paths ["examples"]}
+             :clojure16 {:dependencies [[org.clojure/clojure "1.6.0"]]}}
   :aliases {"run-example-manager" ["with-profile" "default,clojure16,example" "run" "-m" "cljoud.example.manager"]
              "run-example-node" ["with-profile" "default,clojure16,example" "run" "-m" "cljoud.example.node"]
              "run-example-client" ["with-profile" "default,clojure16,example" "run" "-m" "cljoud.example.client"]
-             "test-all" ["with-profile" "default,clojure15:default,clojure16" "test"]}
+             "test-all" ["with-profile" "default,clojure15:default,clojure16" "test"]})

@@ -1,11 +1,12 @@
 (ns cljoud.manager)
 (defn make-request [tid func-name func-code params]
   (let [serialized-params (serialize params)]
-    [taskid [func-name func-code serialized-params]]))
+    [tid [func-name func-code serialized-params]]))
 (defn make-answer [tid coll]
   (serialize [tid coll]))
 (defprotocol ManagerProtocol
   (async-call-remote [this func-name func-code params options])
+  (generate-node-queries [this msg])
   (handle-client-query [this msg])
   (handle-node-answer[this msg])
   (get-next-task-id[this])
@@ -18,9 +19,9 @@
   (get-client[this tid])
   (remove-client[this tid])
   (close [this]))
-(deftype Manager [taskid clientid responses node-num]
+(deftype Manager [taskid clientid responses nodes]
   ManagerProtocol
-(handle-client-query [this msg]
+(generate-node-queries [this msg]
   "Inspects recieved queue and spreads it via nodes"
   (let [tid (first msg)
         data (second (second msg))
@@ -29,13 +30,18 @@
         coll (deserialize (nth data 2))
         len (count coll)
         nodes node-num
-        step (/ len nodes)
+        step (quot len nodes)
         manager-tid (get-next-task-id)]
     (loop [offset 0 queries '() tail coll]
       (if (> (+ step offset) len)
-        (cons tail queries)
+        (cons (make-request [offset manager-tid] func-name func-code tail) queries)
         (recur (+ offset step) (cons (make-request [offset manager-tid] func-name func-code (take step tail)) queries) (drop step tail))))))
-(handle-node-answer [this msg]
+
+  (handle-client-query [this msg]
+    (let [queries (generate-node-queries msg)]
+      (for [[q node] (map vector queries nodes)] (async-send-request node q))))
+
+  (handle-node-answer [this msg]
   "Handles receive of partial map() result. May invoke sending of whole result to client."
   (let [[offset manager-tid] (first msg)
         data (second msg)
@@ -44,7 +50,7 @@
         partial-results (get @responses manager-tid)
         new-partial-result (assoc partial-results {offset data})]
     (swap! responses (assoc responses {manager-id new-partial-result}))
-    (if (= (- length 1) (count partial-results))
+    (if (= (- length 1) (count partial-results)) ;; If all the partial results is here
       (let [[clientconn clienttid] (get-client manager-tid)
             result (concat-node-answers manager-tid)
             msg (make-answer clienttid result)]
@@ -52,9 +58,11 @@
     )))
   (save-client[this tid clientconn clienttid]
     (swap! clientid assoc tid (list clientconn clientid))
+
   (get-client[this tid]
     "Returns a connection by given manager-taskid")
     (get @clientid tid))
+
   (concat-node-answers[this manager-tid]
     (let [responses (get @responses manager-tid)
           sorted-responses (sorted-map-by < responses)]
@@ -62,15 +70,16 @@
       ;;(loop [offset 0 acc '[]]
       ;;  (if (> offset ))
       ;;  (recur (inc offset) (concat acc (get responses offset)))))
+
   (async-call-remote [this func-name func-code params options])
+
   (get-next-task-id[this]
     (let [nid (inc @taskid)]
       (swap! taskid inc)))
+
   (node-num [this]
     "Returns number of connected nodes"
-    node-num)
-  (send-answer-to-client[this client tid coll])
-
+    (count nodes))
   (get-data-by-tid [this tid]
     "Returns a map {offset, data} by given manager-task-id"
     (get @responses tid))
@@ -82,10 +91,14 @@
      (let [m (get @responses tid)]
        (reduce (fn [acc y] (+ acc (count y))) 0 m)))
   (close [this]))
-(defn create-manager[port node-num]
+(defn create-manager[client-port node-port num-nodes]
   ;; TODO Connect nodes
-  (let [responses (atom {}) ;; Map storing responses from working nodes. Looks like {taskid, {offset, data}}
+  (let [ client-tcp-server (create-tcp-server client-port handle-client-request)
+         node-tcp-server (create-tcp-server node-port handle-node-answer)
+         nodes (accept-nodes num-nodes)
+        ]
+    (let [responses (atom {}) ;; Map storing responses from working nodes. Looks like {taskid, {offset, data}}
         taskid (atom 0)    ;; Unique id for each incoming task
         clientid (atom {}) ;; Map storing {taskid, connection} pairs.
-        manager (Manager. taskid clientid responses node-num)]
-    manager))
+        manager (Manager. taskid clientid responses nodes)]
+    manager)))
