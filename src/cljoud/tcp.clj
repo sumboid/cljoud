@@ -1,37 +1,24 @@
 (ns cljoud.tcp)
-"Wtf am I doing?"
-(defn host-port
-  "get host and port from connection string"
-  [connection-string]
-  (let [[host port] (split connection-string #":")]
-    [host (Integer/valueOf ^String port)]))
-(defprotocol MessageChannel
-  (id [this])
-  (send [this msg])
-  (valid? [this])
-  (channel-addr [this])
-  (remote-addr [this])
-  (close [this]))
-(deftype Channel
-  MessageChannel
-  (id [this])
-  (send [this msg])
-  (valid? [this])
-  (channel-addr [this])
-  (remote-addr [this])
-  (close [this]))
-(defprotocol ServerChannelProtocol
-  (accept [this])
-  (send [this msg])
-  (recv [this])
-  (close[this]))
-(deftype ServerChannel [recvhandler]
-  ServerChannelProtocol
-  (accept [this])
-  (send [this conn msg])
-  (recv [this])
-  (close[this]))
-(defn open-tcp-client host port
-  "Returns MessageChannel")
-(defn start-tcp-server [port handler])
-(defn accept-nodes[])
+
+(require '[clojure.java.io :as io])
+(import '(java.net ServerSocket))
+(import '(java.net Socket))
+
+(defprotocol S
+  (listen [x])
+  (ssend [x msg])
+  (srecv [x])
+  (close[x]))
+
+(deftype Soc [socket]
+  S
+  (listen [x] (.accept socket))
+  (ssend [x msg]
+    (let [writer (io/writer socket)]
+      (.write writer msg)
+      (.flush writer)))
+  (srecv [x] (.readLine (io/reader socket)))
+  (close [x] (.close socket)))
+
+(defn create-server-socket [port] (Soc. (ServerSocket. port)))
+(defn create-client-socket [host port] (Soc. (Socket. host port)))
