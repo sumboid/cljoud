@@ -2,6 +2,8 @@
 (defn make-request [tid func-name func-code params]
   (let [serialized-params (serialize params)]
     [taskid [func-name func-code serialized-params]]))
+(defn make-answer [tid coll]
+  (serialize [tid coll]))
 (defprotocol ManagerProtocol
   (async-call-remote [this func-name func-code params options])
   (handle-client-query [this msg])
@@ -16,7 +18,7 @@
   (get-client[this tid])
   (remove-client[this tid])
   (close [this]))
-(deftype Manager [taskid clientid node-num]
+(deftype Manager [taskid clientid responses node-num]
   ManagerProtocol
 (handle-client-query [this msg]
   "Inspects recieved queue and spreads it via nodes"
@@ -39,18 +41,27 @@
         data (second msg)
         responses (get-data-by-tid manager-tid)
         length (get-data-length manager-tid)
-        partial-results (get responses manager-tid)
+        partial-results (get @responses manager-tid)
         new-partial-result (assoc partial-results {offset data})]
     (swap! responses (assoc responses {manager-id new-partial-result}))
     (if (= (- length 1) (count partial-results))
-      (let client (get-client manager-tid))
+      (let [[clientconn clienttid] (get-client manager-tid)
+            result (concat-node-answers manager-tid)
+            msg (make-answer clienttid result)]
+        (send clientconn msg))
     )))
-  (save-client[this tid clientconn]
-    (swap! clientid assoc tid clientconn))
+  (save-client[this tid clientconn clienttid]
+    (swap! clientid assoc tid (list clientconn clientid))
   (get-client[this tid]
     "Returns a connection by given manager-taskid")
     (get @clientid tid))
-  (concat-node-answers[this results])
+  (concat-node-answers[this manager-tid]
+    (let [responses (get @responses manager-tid)
+          sorted-responses (sorted-map-by < responses)]
+      (reduce (fn [acc x] (concat acc x)) '[] sorted-map)))
+      ;;(loop [offset 0 acc '[]]
+      ;;  (if (> offset ))
+      ;;  (recur (inc offset) (concat acc (get responses offset)))))
   (async-call-remote [this func-name func-code params options])
   (get-next-task-id[this]
     (let [nid (inc @taskid)]
@@ -59,10 +70,22 @@
     "Returns number of connected nodes"
     node-num)
   (send-answer-to-client[this client tid coll])
+
   (get-data-by-tid [this tid]
-    "Returns a map {offset, data} by given manager-task-id")
+    "Returns a map {offset, data} by given manager-task-id"
+    (get @responses tid))
   (get-data-length [this tid]
-    "Returns number of completed partial map()s")
+    "Returns number of completed partial map()s"
+    (count (get @responses tid)))
+   (get-full-data-length [this tid]
+      "Returns length of completed partial map()s"
+     (let [m (get @responses tid)]
+       (reduce (fn [acc y] (+ acc (count y))) 0 m)))
   (close [this]))
 (defn create-manager[port node-num]
-  (let ))
+  ;; TODO Connect nodes
+  (let [responses (atom {}) ;; Map storing responses from working nodes. Looks like {taskid, {offset, data}}
+        taskid (atom 0)    ;; Unique id for each incoming task
+        clientid (atom {}) ;; Map storing {taskid, connection} pairs.
+        manager (Manager. taskid clientid responses node-num)]
+    manager))
