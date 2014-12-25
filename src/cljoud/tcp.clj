@@ -14,7 +14,7 @@
   (listen [x] (Soc. (.accept socket)))
   (ssend [x msg]
     (println msg)
-    (let [writer (io/writer socket)]
+    (let [writer (io/writer socket)]   ;; >Should be used inside with-open to ensure the Writer is properly closed.
       (.write writer msg)
       (.flush writer)))
   (srecv [x] (.readLine (io/reader socket)))

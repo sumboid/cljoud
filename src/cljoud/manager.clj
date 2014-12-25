@@ -18,7 +18,7 @@
                       manager
                       msg-type
                       msg]
-  (println from)
+  (println from msg)
   (case msg-type
     "register" (! manager [:register from msg])
     (! manager [:unknown from msg])))

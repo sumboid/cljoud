@@ -1,5 +1,7 @@
 (ns cljoud.serialization
-  (:require [cheshire.core :as json]))
+  (:use [cljoud common])
+  (:require [cheshire.core :as json])
+  (:import [java.nio.charset Charset]))
 
 (defn deserialize
   ([data] (deserialize data :buffer))

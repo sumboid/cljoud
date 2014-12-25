@@ -1,4 +1,4 @@
-(ns framework.core
+(ns cljoud.client
   (:use [clojure.repl :only [source-fn]])
   (:use [clojure.string :only [split]])
   (:use [cljoud.client.common]))
@@ -6,7 +6,7 @@
 (defn cloudrc
   "Create connection to a manager."
   [addr]
-  (delay (create-client addr)))
+  (create-client addr))
 
 (defn process-call-result [call-result]
   (if (nil? (:cause call-result))
@@ -16,9 +16,8 @@
   "Invoke remote function with given connection.
    Used exclusevely by defn-remote."
   [sc remote-call-info]
-  ;;(let [sc @(or *sc* sc) ;; allow local binding to override client
-  ;;      [fname fcode args] remote-call-info]
-      (process-call-result (sync-call-remote sc fname fcode args options)))
+  (let [[fname fcode args] remote-call-info]
+      (process-call-result (sync-call-remote sc fname fcode args))))
 
 (defn rmap[f coll]
   (f coll))
@@ -32,15 +31,19 @@
           [remote-ns remote-name] (split fname-str #"/" 2)
           facade-sym (if ns-declared
                        (symbol remote-name)
-                       fname)
-          fsource (or (clojure.repl/source-fn fname) (throw Exception . (+ "Source not found:" fname)))]
+                       fname)]
+      (if ns-declared
+        (let [rns (symbol remote-ns)
+              rname (symbol remote-name)]
+            (require [rns :only (list rname)])))
+      (let [fsource (or (clojure.repl/source-fn fname) (throw Exception . (+ "Source not found:" fname)))]
       `(def ~facade-sym
          (with-meta
            (fn [& args#]
-             (apply invoke-remote ~sc [~remote-ns ~remote-name ~fsource (into [] args#)]))
+             (apply invoke-remote ~sc [[~remote-name ~fsource (into [] args#)]]))
            {:remote-fn true
             :client ~sc
             :remote-ns ~remote-ns
             :remote-name ~remote-name
             :source ~fsource}
-           )))))
+           ))))))

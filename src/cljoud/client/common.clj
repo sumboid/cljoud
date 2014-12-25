@@ -1,5 +1,5 @@
 (ns cljoud.client.common
-  (:use [cljoud tcp])
+  (:use [cljoud tcp common])
   (:use [cljoud serialization])
   (:import [java.net ConnectException InetSocketAddress InetAddress]
            [java.nio.channels ClosedChannelException]
@@ -27,22 +27,18 @@
     [tid [:type-request [func-name func-code serialized-params]]]))
 
 (defprotocol ClientProtocol
-  (sync-call-remote [this func-name func-code params options])
+  (sync-call-remote [this func-name func-code params])
   (close [this]))
-
-(defn- channel-hostport [ch]
-  (let [addr (remote-addr ch)]   ;;<- TODO
-    (str (.getHostAddress ^InetAddress
-    (.getAddress ^InetSocketAddress addr)) ":" (.getPort ^InetSocketAddress addr))))
 
 (deftype Client [conn]
   ClientProtocol
-  (sync-call-remote [this func-name func-code params call-options]
-    (let [request (make-request tid func-name func-code params)
-           tid 0]
-      (send conn request);; <- TODO
-      (recv conn msg)
-      (let [tid (first msg)
+  (sync-call-remote [this func-name func-code params]
+    (println "Sync-call-remote")
+    (let [ tid 0
+           request (make-request tid func-name func-code params)]
+      (ssend conn (str request));; <- TODO
+      (let [msg (srecv conn)
+            tid (first msg)
             msg-body (second msg)
             result (handle-response msg-body)]
         result)))
@@ -50,7 +46,9 @@
     (close conn)))
 
 (defn create-client [addr]
+  (do
+    (println "Creating client in" addr)
   (let [[host port] (host-port addr)
-        client (open-tcp-client host port)
+        client (create-client-socket host port)
         cljoud-client (Client. client)]
-      cljoud-client))
+      cljoud-client)))
