@@ -24,7 +24,7 @@
 
 (defn make-request [tid func-name func-code params]
   (let [serialized-params (serialize params)]
-    [tid [:type-request [func-name func-code serialized-params]]]))
+    (serialize [:type-request [tid func-name func-code params]])))
 
 (defprotocol ClientProtocol
   (sync-call-remote [this func-name func-code params])
@@ -33,7 +33,6 @@
 (deftype Client [conn]
   ClientProtocol
   (sync-call-remote [this func-name func-code params]
-    (println "Sync-call-remote")
     (let [ tid 0
            request (make-request tid func-name func-code params)]
       (ssend conn (str request));; <- TODO
@@ -47,7 +46,7 @@
 
 (defn create-client [addr]
   (do
-    (println "Creating client in" addr)
+    (println "Creating client in " addr)
   (let [[host port] (host-port addr)
         client (create-client-socket host port)
         cljoud-client (Client. client)]

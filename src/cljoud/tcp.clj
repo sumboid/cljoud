@@ -15,7 +15,7 @@
   (ssend [x msg]
     (println msg)
     (let [writer (io/writer socket)]   ;; >Should be used inside with-open to ensure the Writer is properly closed.
-      (.write writer msg)
+      (.write writer (str msg "\n"))
       (.flush writer)))
   (srecv [x] (.readLine (io/reader socket)))
   (sclose [x] (.close socket)))
