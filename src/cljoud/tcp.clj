@@ -1,8 +1,7 @@
 (ns cljoud.tcp)
 
 (require '[clojure.java.io :as io])
-(import '(java.net ServerSocket))
-(import '(java.net Socket))
+(import '(java.net ServerSocket) '(java.net Socket))
 
 (defprotocol S
   (listen [x])
