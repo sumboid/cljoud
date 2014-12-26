@@ -18,4 +18,4 @@
              "run-example-node" ["with-profile" "default,clojure16,example" "run" "-m" "cljoud.example.node"]
              "run-example-client" ["with-profile" "default,clojure16,example" "run" "-m" "cljoud.example.client"]
              "run-manager" ["with-profile" "default,clojure16" "run" "-m" "cljoud.manager"]
-             "test-all" ["with-profile" "default,clojure15:default,clojure16" "test"]})
+             "test-all" ["with-profile" "default,clojure16" "test"]})

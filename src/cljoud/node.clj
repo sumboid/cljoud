@@ -3,11 +3,15 @@
   (:use [cljoud tcp])
   (:use [co.paralleluniverse.pulsar core actors]))
 
+(defn call [^String nm & args]
+    (when-let [fun (ns-resolve *ns* (symbol nm))]
+        (apply fun args)))
 (defn do-map[func-name func-code params]
   (create-ns 'user)
-  (intern 'user 'func-name func-code)
-  (let [result (map user/func-name params)]
-    (remove-ns 'user)
+  ;;(binding [*ns* 'user]
+    (intern 'user (symbol func-name) (eval (read-string func-code)))
+    (let [result (map (fn [x] (call func-name x)) params)]
+      (remove-ns 'user)
     result))
 (defn handle-request [msg]
   (let [tid (first msg)
