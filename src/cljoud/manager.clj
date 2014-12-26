@@ -1,9 +1,11 @@
 (ns cljoud.manager
-  (:require [clojure.string :as str] [cljs.core.match :refer-macros [match]])
+  (:require [clojure.string :as str] [cheshire.core :refer :all])
   (:use [co.paralleluniverse.pulsar core actors] [cljoud tcp serialization])
   (:refer-clojure :exclude [promise await]))
 
 (def next-task-id (atom 0))
+
+(def nm-ref (atom nil))
 
 (defsfn gen-next-task-id []
   swap! next-task-id inc)
@@ -12,30 +14,21 @@
   (let [serialized-params (serialize params)]
     (serialize [:request [tid func-name func-code serialized-params]])))
 
-(defsfn freceive [from
-                  manager
-                  socket
-                  function]
-  (println from)
+(defn freceive [from socket]
   (future
-    (let [raw-msg (deserialize (srecv socket))
-          msg-type (first raw-msg)
-          msg (last raw-msg)]
-      (println raw-msg)
-      (function from manager msg-type msg))))
+    (let [msg (srecv socket)
+          pmsg (parse-string msg true)]
+      (do
+        (println msg)
+        (println (parse-string msg))
+        (println nm-ref)
+        (case (get pmsg :type)
+          "register" (! nm-ref [:register from pmsg])
+          (! nm-ref [:unknown from pmsg]))))))
 
-(defsfn node-matcher [from
-                      manager
-                      msg-type
-                      msg]
-  (println from msg)
-  (case msg-type
-    "register" (do (println "register!") (! manager [:register from msg]))
-    (! manager [:unknown from msg])))
-
-(defsfn node [manager socket]
+(defsfn node [socket]
   (let [umself @self
-        frecv (spawn-fiber freceive umself manager socket node-matcher)]
+        frecv (spawn-fiber freceive umself socket)]
     (do
       (receive 
         [:id msg] (do
@@ -48,12 +41,13 @@
   (set-state! { :nodes [] :last-node-id 0 })
   (loop []
     (let [nodes (get @state :nodes) last-node-id (get @state :last-node-id)]
+      (println "Prepare your anus")
       (receive
         [:register from msg] (do
                                (println "register message")
                                (! from [:id last-node-id])
                                (set-state! { :nodes (conj nodes last-node-id) :last-node-id (+ last-node-id 1) }))
-      [:unknown from msg] (println "WAT")))
+        [:unknown from msg] (println "WAT")))
     (recur)))
 
 (defsfn client-req-gen [from
@@ -85,7 +79,7 @@
 
 (defsfn client [socket]
   (let [umself @self
-        frecv (spawn-fiber freceive umself nil socket client-req-handler)]
+        frecv (spawn-fiber freceive umself  socket)]
     (do
       (receive
         [:id msg] (do
@@ -97,7 +91,7 @@
   (future
     (loop []
       (let [cs (listen socket)]
-        (spawn node manager cs))
+        (spawn node cs))
       (recur))))
 
 (defn client-listener [socket]
@@ -115,6 +109,7 @@
         client-soc (create-server-socket 8080)
         cl (spawn-fiber client-listener client-soc)]
     (do
+      (swap! nm-ref (fn [x] nm))
       (join nm)
       (join nl)
       (join cl))))
