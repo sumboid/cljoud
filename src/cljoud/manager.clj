@@ -30,7 +30,7 @@
                       msg]
   (println from msg)
   (case msg-type
-    "register" (! manager [:register from msg])
+    "register" (do (println "register!") (! manager [:register from msg]))
     (! manager [:unknown from msg])))
 
 (defsfn node [manager socket]
@@ -46,19 +46,21 @@
 
 (defsfn node-manager []
   (set-state! { :nodes [] :last-node-id 0 })
-    (loop []
-      (let [nodes (get @state :nodes) last-node-id (get @state :last-node-id)]
+  (loop []
+    (let [nodes (get @state :nodes) last-node-id (get @state :last-node-id)]
       (receive
         [:register from msg] (do
+                               (println "register message")
                                (! from [:id last-node-id])
-                               (set-state! { :nodes (conj nodes last-node-id) :last-node-id (+ last-node-id 1) }))))
-      (recur)))
+                               (set-state! { :nodes (conj nodes last-node-id) :last-node-id (+ last-node-id 1) }))
+      [:unknown from msg] (println "WAT")))
+    (recur)))
 
 (defsfn client-req-gen [from
                         manager
                         msg-type
                         data]
-  (println "DATA" (deserialize data)))
+  (println "DATA" (deserialize data))
 
   (let [tid (first data)
         func-name (nth data 1)
@@ -99,8 +101,8 @@
       (recur))))
 
 (defn client-listener [socket]
-   (future
-     (loop []
+  (future
+    (loop []
       (let [cs (listen socket)]
         (spawn client cs))
       (recur))))
