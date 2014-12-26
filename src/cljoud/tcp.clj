@@ -9,19 +9,27 @@
   (ssend [x msg])
   (srecv [x])
   (sclose[x]))
-
+(defn read-n-bytes [reader num-bytes]
+  (let [carr   (char-array num-bytes)
+        n-read (.read reader carr 0 num-bytes)
+        trimmed-carr (if (= n-read num-bytes) carr
+                       (char-array n-read carr))]
+    (line-seq (java.io.BufferedReader.
+                (java.io.StringReader.
+                  (apply str (seq trimmed-carr)))))))
 (deftype Soc [socket]
   S
   (listen [x] (Soc. (.accept socket)))
   (ssend [x msg]
-    (println msg)
-    (with-open [writer (io/writer socket)]   ;; >Should be used inside with-open to ensure the Writer is properly closed.
-      (.write writer (str/join [(+ 1 (count msg)) "\n" msg]))
+    (let [writer (io/writer socket)]
+      (.write writer (str/join [(count msg) "\n" msg]))
       (.flush writer)))
-  (srecv [x] (let [in (io/input-stream socket)
-                   size (read-string (.readLine (io/reader socket)))
-                   buf (byte-array size)
-                   rsize (.read in buf)] (apply str (map char buf))))
+  (srecv [x] (let [;;in (io/input-stream socket)
+                   rdr (io/reader socket)
+                   size (read-string (.readLine rdr))
+                   bytes (first (read-n-bytes rdr size))] ;; first cause it returns (str)
+               bytes))
+
   (sclose [x] (.close socket)))
 
 

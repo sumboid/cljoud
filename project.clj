@@ -8,6 +8,7 @@
                   [cheshire "5.3.1"]
                   [co.paralleluniverse/pulsar "0.6.2"]
                   [org.clojure/core.match "0.3.0-alpha4"]
+                  [org.clojure/data.json "0.2.5"]
                 ]
   :java-agents [[co.paralleluniverse/quasar-core "0.6.2"]]
 

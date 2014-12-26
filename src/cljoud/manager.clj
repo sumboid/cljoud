@@ -1,6 +1,6 @@
 (ns cljoud.manager
   (:require [clojure.string :as str] [cljs.core.match :refer-macros [match]])
-  (:use [co.paralleluniverse.pulsar core actors] [cljoud tcp serialization])
+  (:use [co.paralleluniverse.pulsar core actors] [cljoud tcp serialization common])
   (:refer-clojure :exclude [promise await]))
 
 (def next-task-id (atom 0))
@@ -9,7 +9,7 @@
   swap! next-task-id inc)
 
 (defsfn make-request [tid func-name func-code params]
-  (let [serialized-params (serialize params)]
+  (let [serialized-params params]
     (serialize [:request [tid func-name func-code serialized-params]])))
 
 (defsfn freceive [from
@@ -18,11 +18,14 @@
                   function]
   (println from)
   (future
-    (let [raw-msg (deserialize (srecv socket))
-          msg-type (first raw-msg)
-          msg (last raw-msg)]
-      (println raw-msg)
-      (function from manager msg-type msg))))
+    (let [raw-msg (srecv socket)]
+      (println "RAW MSG "raw-msg)
+
+      (let [dmsg (deserialize raw-msg)
+            msg-type (first dmsg)
+            msg (last dmsg)]
+        (println dmsg ", TYPE: "msg-type, ", MSG: " msg)
+      (function from manager msg-type msg)))))
 
 (defsfn node-matcher [from
                       manager
@@ -60,18 +63,19 @@
                         manager
                         msg-type
                         data]
-  (println "DATA" (deserialize data))
-
   (let [tid (first data)
         func-name (nth data 1)
         func-code (nth data 2)
-        coll (deserialize (nth data 3))
+        coll (first (nth data 3)) ;; J
         len (count coll)
-        nodes 4;; <- avail nodes TODO
+        nodes 2;; <- avail nodes TODO
         step (quot len nodes)
         manager-tid (gen-next-task-id)]
+    (if *debug*
+      (println "TID: " tid ", FNAME " func-name ", FCODE " func-code ", COLL: " coll ", STEP " step ", LEN " len))
     (loop [offset 0 queries '() tail coll]
-      (if (> (+ step offset) len)
+      (println offset)
+      (if (or (>= (+ step offset) len) (= offset (* (dec nodes) step)))
         (cons (make-request [offset manager-tid] func-name func-code tail) queries)
         (recur (+ offset step) (cons (make-request [offset manager-tid] func-name func-code (take step tail)) queries) (drop step tail))))))
 

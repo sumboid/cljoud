@@ -7,7 +7,7 @@
 ;;  (defn-remote conn2 "cljoud.example.api/inc-m")
   (catch Exception e (str "caught exception: " (.getMessage e))))
 
-(def m [1 2 3])
+(def m [1 2 3 4 5 6])
 (defn -main [& args]
   (println m)
   (println (rmap dec-m m)))
