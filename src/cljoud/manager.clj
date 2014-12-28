@@ -48,13 +48,13 @@
                                        host (get msg :host)
                                        port (read-string (get msg :port))]
                                    (! from [:id last-node-id])
-                                   (set-state! { :nodes (conj nodes { :id last-node-id
+                                   (set-state! { :nodes (cons nodes { :id last-node-id
                                                                      :info { :tds tds
                                                                             :host host
                                                                             :port port}})
-                                                :last-node-id (+ last-node-id 1) }))
-                                 [:unknown from msg] (println "WAT")
-                                 :else (println "Unknown message"))))
+                                                :last-node-id (+ last-node-id 1) })))
+          [:unknown from msg] (println "WAT")
+          :else (println "Unknown message")))
       (recur))))
 
 (defsfn manager []
@@ -71,24 +71,27 @@
             tasks (get @state :tasks)
             complete-subtasks (get @state :complete-subtasks)
             subtasks (get @state :subtasks)
-            node-manager (get @state :node-manager)]
+            node-manager (get @state :node-manager)
+            subscribers (get @state :subscribers)]
 
         (receive
           [:node id tds]
-          (set-state! { :nodes (conj nodes {:id id :tds tds :subtasks [] })
-                        :tasks tasks
-                        :last-task-id last-task-id
-                        :complete-subtasks complete-subtasks
-                        :subtasks subtasks
-                        :node-manager node-manager })
+          (set-state! { :nodes (cons nodes {:id id :tds tds :subtasks [] })
+                       :tasks tasks
+                       :last-task-id last-task-id
+                       :complete-subtasks complete-subtasks
+                       :subtasks subtasks
+                       :subscribers subscribers
+                       :node-manager node-manager })
 
           [:register nm-ref]
           (set-state! { :nodes nodes
-                        :tasks tasks
-                        :last-task-id last-task-id
-                        :complete-subtasks complete-subtasks
-                        :subtasks subtasks
-                        :node-manager nm-ref })
+                       :tasks tasks
+                       :last-task-id last-task-id
+                       :complete-subtasks complete-subtasks
+                       :subtasks subtasks
+                       :subscribers subscribers
+                       :node-manager nm-ref })
 
           [:new-task from task]
           (do
@@ -96,11 +99,12 @@
             ;; task <- [last-task-id parts-number complete-parts-number]
             ;; send subtasks to nodes
             (set-state! { :nodes nodes
-                          :tasks tasks
-                          :last-task-id (+ 1 last-task-id)
-                          :complete-subtasks complete-subtasks
-                          :subtasks subtasks
-                          :node-manager node-manager })
+                         :tasks tasks
+                         :last-task-id (+ 1 last-task-id)
+                         :complete-subtasks complete-subtasks
+                         :subtasks subtasks
+                         :subscribers subscribers
+                         :node-manager node-manager })
 
             (! from :task-id (- last-task-id 1))) ; send task id to client
 
@@ -109,86 +113,116 @@
                 current-task (first (filter #(= id (get % id)) tasks))
                 ct-id (get :id current-task)
                 ct-st-number (get :st-number current-task)
-                ct-cst-number (get :cst-number current-task)]
-            (set-state! { :nodes nodes
-                          :tasks (conj filtered-tasks { :id ct-id :st-id ct-st-number :cst-id ct-cst-number })
-                          :last-task-id last-task-id
-                          :complete-subtasks (conj complete-subtasks { :id id :sid subid :result result })
-                          :subtasks (filter #(and (= id (get % :id)) (= subid (get % :subid))) subtasks)
-                          :node-manager node-manager }))
+                ct-cst-number (+ 1 (get :cst-number current-task))]
+            (do
+              (set-state! { :nodes nodes
+                           :tasks (cons filtered-tasks { :id ct-id :st-number ct-st-number :cst-number ct-cst-number })
+                           :last-task-id last-task-id
+                           :complete-subtasks (cons complete-subtasks { :id id :sid subid :result result })
+                           :subtasks (filter #(and (= id (get % :id)) (= subid (get % :subid))) subtasks)
+                           :subscribers subscribers
+                           :node-manager node-manager })
+              (! @self [:check-complete])))
 
-          [:progress from task-id]
-          (let [task (first (filter #(= id (get % id) tasks)))
-                st-number (get task :st-number)
-                cst-number (get task :cst-number)]
-            (! from (/ cst-number (double st-number))))
+            [:progress from task-id]
+            (let [task (first (filter #(= id (get % id) tasks)))
+                  st-number (get task :st-number)
+                  cst-number (get task :cst-number)]
+              (! from [:progress (/ cst-number (double st-number))]))
 
-          [:
+            [:subscribe from task-id]
+            (do
+              (set-state! { :nodes nodes
+                           :tasks tasks
+                           :last-task-id last-task-id
+                           :complete-subtasks complete-subtasks
+                           :subtasks subtasks
+                           :subscribers (cons { :task-id task-id :subscriber from } subscribers)
+                           :node-manager node-manager })
+              (! @self [:check-complete]))
 
-
-
-
-          (defsfn client-req-gen [from
-                                  manager
-                                  msg-type
-                                  data]
-            (let [tid (first data)
-                  func-name (nth data 1)
-                  func-code (nth data 2)
-                  coll (first (nth data 3)) ;; J
-                  len (count coll)
-                  nodes 2;; <- avail nodes TODO
-                  step (quot len nodes)
-                  manager-tid (gen-next-task-id)]
-              (if *debug*
-                (println "TID: " tid ", FNAME " func-name ", FCODE " func-code ", COLL: " coll ", STEP " step ", LEN " len))
-              (loop [offset 0 queries '() tail coll]
-                (println offset)
-                (if (or (>= (+ step offset) len) (= offset (* (dec nodes) step)))
-                  (cons (make-request [offset manager-tid] func-name func-code tail) queries)
-                  (recur (+ offset step) (cons (make-request [offset manager-tid] func-name func-code (take step tail)) queries) (drop step tail))))))
-
-          (defsfn client-req-handler [from
-                                      manager
-                                      msg-type
-                                      data]
-            (let [queries (client-req-gen from manager msg-type data)]
-              ;; send queries to nodes here
-              (println queries)))
-
-          (defsfn client [socket]
-            (let [umself @self
-                  frecv (spawn-fiber freceive umself  socket)]
-              (do
-                (receive
-                  [:id msg] (do
-                              (ssend socket (str (str/join " " ["id" msg])))))
-                (join frecv)
-                (sclose socket))))
-
-          (defn node-listener [manager socket]
-            (future
-              (loop []
-                (let [cs (listen socket)]
-                  (spawn node manager cs))
-                (recur))))
-
-          (defn client-listener [socket]
-            (future
-              (loop []
-                (let [cs (listen socket)]
-                  (spawn client cs))
-                (recur))))
+            [:check-complete]
+            (doseq [s subscribers]
+              (let [subscriber (get s :subscriber)
+                    task-id (get s :task-id)
+                    task (first (filter #(= task-id (get % :id)) tasks))
+                    st-n (get task :st-number)
+                    cst-n (get task :cst-number)]
+                (if (= st-n cst-n) ; complete task was finded
+                  (let [css (filter #(= task-id (get % :id)) complete-subtask)
+                        scss (sort #(compare (get %1 :sid) (get %2 :sid)) css)
+                        results (map #(get % :result) scss)]
+                    ; merge results of subtasks
+                    ; send result to subsriber
+                    nil)
+                  nil)))))
+        (recur))))
 
 
-          (defn -main [& args]
-            (let [nm (spawn node-manager)
-                  nl-soc (create-server-socket 8000)
-                  nl (spawn-fiber node-listener nm nl-soc)
-                  client-soc (create-server-socket 8080)
-                  cl (spawn-fiber client-listener client-soc)]
-              (do
-                (join nm)
-                (join nl)
-                (join cl))))
+
+
+
+(defsfn client-req-gen [from
+                        manager
+                        msg-type
+                        data]
+  (let [tid (first data)
+        func-name (nth data 1)
+        func-code (nth data 2)
+        coll (first (nth data 3)) ;; J
+        len (count coll)
+        nodes 2;; <- avail nodes TODO
+        step (quot len nodes)
+        manager-tid (gen-next-task-id)]
+    (if *debug*
+      (println "TID: " tid ", FNAME " func-name ", FCODE " func-code ", COLL: " coll ", STEP " step ", LEN " len))
+    (loop [offset 0 queries '() tail coll]
+      (println offset)
+      (if (or (>= (+ step offset) len) (= offset (* (dec nodes) step)))
+        (cons (make-request [offset manager-tid] func-name func-code tail) queries)
+        (recur (+ offset step) (cons (make-request [offset manager-tid] func-name func-code (take step tail)) queries) (drop step tail))))))
+
+(defsfn client-req-handler [from
+                            manager
+                            msg-type
+                            data]
+  (let [queries (client-req-gen from manager msg-type data)]
+    ;; send queries to nodes here
+    (println queries)))
+
+(defsfn client [socket]
+  (let [umself @self
+        frecv (spawn-fiber freceive umself  socket)]
+    (do
+      (receive
+        [:id msg] (do
+                    (ssend socket (str (str/join " " ["id" msg])))))
+      (join frecv)
+      (sclose socket))))
+
+(defn node-listener [manager socket]
+  (future
+    (loop []
+      (let [cs (listen socket)]
+        (spawn node manager cs))
+      (recur))))
+
+(defn client-listener [socket]
+  (future
+    (loop []
+      (let [cs (listen socket)]
+        (spawn client cs))
+      (recur))))
+
+
+(defn -main [& args]
+  (let [nm (spawn node-manager)
+        nl-soc (create-server-socket 8000)
+        nl (spawn-fiber node-listener nm nl-soc)
+        client-soc (create-server-socket 8080)
+        cl (spawn-fiber client-listener client-soc)]
+    (do
+      (join nm)
+      (join nl)
+      (join cl))))
 
