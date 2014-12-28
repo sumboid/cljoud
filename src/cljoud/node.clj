@@ -89,7 +89,7 @@
                        current-worker (first (filter #(= w (first %)) workers))]
                 (! (first w) [:subtask id sid st])
                 (set-state! { :workers (cons [(first current-worker) true] filtered-workers)
-                             :node-id nid
+                             :node-id node-id
                              :subtasks (filter #(not (= id (get % :id))) subtasks) }))))
           [:ok] nil)))
     (recur)))
