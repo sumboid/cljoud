@@ -7,10 +7,6 @@
 (defsfn gen-next-task-id []
   swap! next-task-id inc)
 
-(defsfn make-request [tid func-name func-code params]
-  (let [serialized-params params]
-    (serialize [:request [tid func-name func-code serialized-params]])))
-
 (defn node-receive [from manager socket]
   (future
     (let [msg (srecv socket)
@@ -78,10 +74,11 @@
                                        host (get msg :host)
                                        port (get msg :port)]
                                    (! from [:id last-node-id])
-                                   (set-state! { :nodes (cons nodes { :id last-node-id
+                                   (set-state! { :nodes (cons {:id last-node-id
                                                                      :info { :tds tds
                                                                             :host host
-                                                                            :port port}})
+                                                                            :port port}}
+                                                          nodes)
                                                 :last-node-id (+ last-node-id 1) })
                                    (! manager [:node last-node-id tds])))
           [:subtask from msg] (do
@@ -93,14 +90,17 @@
                                   (! manager node-id id subid result)))
 
           [:send-subtask node-id id subid subtask]
-          (let [node (first (filter #(= node-id (get % :id)) nodes))
-                node-info (get node :info)
+          (do
+            (println "sending subtask " subtask " to node-id " node-id)
+          (let [node (first (filter #(= node-id (get % :id)) nodes))]
+            (println "NODE " node, ", NODES " nodes)
+            (let [node-info (get node :info)
                 host (get node-info :host)
                 port (get node-info :port)
                 socket (create-client-socket host port)]
             (do
-              (ssend socket (serialize {:id id :subid subid :subtask subtask}))
-              (sclose socket)))
+              (ssend socket (serialize {:type "subtask" :id id :subid subid :subtask subtask}))
+              (sclose socket)))))
 
           [:unknown from msg] (println "WAT")
           :else (println "Unknown message")))
@@ -110,7 +110,7 @@
   (do
     (set-state! { :nodes [] :tasks [] :last-task-id 0 :сomplete-subtasks [] :subtasks [] :node-manager nil})
     ; node    <- { id subtasks threads-number }
-    ; task    <- { id task-data }
+    ; task    <- { id task-data st-number cst-number}
     ; subtask <- { node-id id subid subtask-data }
     ; complete-subtask <- { id subid result }
 
@@ -125,13 +125,15 @@
 
         (receive
           [:node id tds]
-          (set-state! { :nodes (cons nodes {:id id :tds tds :subtasks [] })
+          (do
+          (println ":node called, id " id ", tds " tds)
+          (set-state! {:nodes (cons {:id id :tds tds :subtasks []} nodes)
                        :tasks tasks
                        :last-task-id last-task-id
                        :complete-subtasks complete-subtasks
                        :subtasks subtasks
                        :subscribers subscribers
-                       :node-manager node-manager })
+                       :node-manager node-manager }))
 
           [:register nm-ref]
           (do
@@ -147,9 +149,40 @@
 
           [:new-task from task]
           (do
-            ;; split task
-            ;; task <- [last-task-id parts-number complete-parts-number]
-            ;; send subtasks to nodes
+            (println "new task received " task ", nodes :" nodes)
+            (println " FNAME " (get task 0) ", FCODE " (get task 1) ", COLL " (first (get task 2)))
+            ;;Сначала распределяем коллекцию так, чтобы были заняты все треды нод и сразу отправляем такие куски. Один элемент на один тред.
+            ;; Если во входной коллекции еще остались не направленные на узлы элементы и все треды узлов имеют по работе,
+            ;; проходим по всем нодам и отправляем на них куски коллекции с длиной, равной количеству тредов на этом узле.
+
+            (let [load-sorted-nodes (sort-by #(count (:subtasks %1)) nodes)
+                  fname (get task 0)
+                  fcode (get task 1)
+                  coll (first  (get task 2))
+                  [extra-coll stasks-n] (loop [s-nodes load-sorted-nodes tail coll subtasks-n 0]    ;; Part of collection which is still here after using all available slots
+                                          (let [node (first s-nodes)]
+                                            (if (or (or (= nil node) (= 0 (count tail) (> (:subtasks node (:tds node))))))
+                                              [tail subtasks-n]
+                                            (let [workslots (- (:tds node) (count (:subtasks node)))
+                                              len (min workslots (count tail))
+                                              collpart (take len tail)
+                                              subtask [fname fcode collpart]]
+                                              (println "COLLPART " collpart)
+                                              (! node-manager [:send-subtask (:id node) last-task-id subtasks-n subtask]) ;; node-id, id, subid, subtask
+                                          (recur (rest s-nodes) (drop len tail) (inc subtasks-n))))))]
+                  (loop [tail extra-coll subtasks-n stasks-n]
+                    (let [new-load-sorted-nodes (sort-by #(count (:subtasks %1)) nodes)
+                           node (first new-load-sorted-nodes)]
+                             (if (= 0 (count tail))
+                               (do (println "work distributed, generated " subtasks-n " subtasks")
+                                   subtasks)
+                               (let [workslots (:tds node)
+                                     len (min workslots (count tail))
+                                     collpart (take len tail)
+                                     subtask [fname fcode collpart]]
+                                  (! node-manager [:send-subtask (:id node) last-task-id subtasks-n subtask])
+                                 (recur (drop len tail) (inc subtasks-n)))))))
+
             (set-state! { :nodes nodes
                          :tasks tasks
                          :last-task-id (+ 1 last-task-id)
@@ -226,35 +259,6 @@
 
 
 
-
-
-(defsfn client-req-gen [from
-                        manager
-                        msg-type
-                        data]
-  (let [tid (first data)
-        func-name (nth data 1)
-        func-code (nth data 2)
-        coll (first (nth data 3)) ;; J
-        len (count coll)
-        nodes 2;; <- avail nodes TODO
-        step (quot len nodes)
-        manager-tid (gen-next-task-id)]
-    (if *debug*
-      (println "TID: " tid ", FNAME " func-name ", FCODE " func-code ", COLL: " coll ", STEP " step ", LEN " len))
-    (loop [offset 0 queries '() tail coll]
-      (println offset)
-      (if (or (>= (+ step offset) len) (= offset (* (dec nodes) step)))
-        (cons (make-request [offset manager-tid] func-name func-code tail) queries)
-        (recur (+ offset step) (cons (make-request [offset manager-tid] func-name func-code (take step tail)) queries) (drop step tail))))))
-
-(defsfn client-req-handler [from
-                            manager
-                            msg-type
-                            data]
-  (let [queries (client-req-gen from manager msg-type data)]
-    ;; send queries to nodes here
-    (println queries)))
 (defn node-listener [manager socket]
   (future
     (loop []
