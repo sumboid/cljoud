@@ -25,23 +25,57 @@
           "quit"  (! manager [:quit from pmsg])
           (! manager [:unknown from pmsg]))))))
 
+(defn client-receive [from manager socket]
+  (future
+    (let [msg (srecv socket)
+          pmsg (deserialize msg)]
+      (do
+        (println msg)
+        (println pmsg)
+        (println manager)
+        (case (get pmsg :type)
+          "task" (! manager [:new-task from (get pmsg :task)])
+          "subscribe"  (! manager [:subscribe from (get pmsg :task-id)])
+          "progress"  (! manager [:progress from (get pmsg :task-id)])
+          (! manager [:unknown from pmsg]))))))
+
+
 (defsfn node [manager socket]
   (let [umself @self
         frecv (spawn-fiber node-receive umself manager socket)]
     (do
       (receive 
-        [:id msg] (do
-                    (ssend socket (str (str/join " " ["id" msg])))))
+        [:id id] (do
+                    (ssend socket (serialize {:type "id" :id id})))
+        [:subtask id] (do
+                    (ssend socket (serialize {:type "id" :id id})))
+        [:ok] (do
+                (ssend socket (serialize {:type "ok"}))))
       (join frecv)
       (sclose socket))))
 
+(defsfn node [manager socket]
+  (let [umself @self
+        frecv (spawn-fiber client-receive umself manager socket)]
+    (do
+      (receive 
+        [:id id] (do
+                   (ssend socket (serialize {:type "id" :id id})))
+        [:result result] (do
+                    (ssend socket (serialize result))) ; serializes result
+        [:progress task-id progress] (do
+                               (ssend socket (serialize {:task-id task-id :progress progress}))))
+      (join frecv)
+      (sclose socket))))
+
+
 (defsfn client [manager socket]
   (let [umself @self
-        frecv (spawn-fiber node-receive umself  socket)]
+        frecv (spawn-fiber client-receive umself  socket)]
     (do
       (receive
-        [:id id] (do
-                    (ssend socket (serialize {:type "id" :id id})))
+        [:task-id id] (do
+                    (ssend socket (serialize {:task-id id :id id})))
         [:ok] (do
                 (ssend socket (serialize {:type "ok"}))))
       (join frecv)
