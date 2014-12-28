@@ -85,15 +85,16 @@
                        :node-manager node-manager })
 
           [:register nm-ref]
-          (do(
+          (do
               (println "registered new node-manager: " nm-ref)
+              (println nodes tasks last-task-id complete-subtasks subtasks subscribers nm-ref)
               (set-state! { :nodes nodes
                            :tasks tasks
                            :last-task-id last-task-id
                            :complete-subtasks complete-subtasks
                            :subtasks subtasks
                            :subscribers subscribers
-                           :node-manager nm-ref })))
+                           :node-manager nm-ref }))
 
           [:new-task from task]
           (do
@@ -121,7 +122,7 @@
                 current-node (first (filter #(= node-id (get % :id)) nodes))
                 unode-id (get current-node :id)
                 unode-tds (get current-node :tds)
-                unode-sts (filter @(not (and (= id (get % :id)) (= subid (get % :subid)))) (get current-node :subtasks))]
+                unode-sts (filter #(not (and (= id (get % :id)) (= subid (get % :subid)))) (get current-node :subtasks))]
             (do
               (set-state! { :nodes (cons {:id unode-id :tds unode-tds :subtasks unode-sts } filtered-nodes)
                            :tasks (cons filtered-tasks { :id ct-id :st-number ct-st-number :cst-number ct-cst-number })
@@ -171,7 +172,7 @@
                                                             (= subscriber (get % :subscriber))
                                                             (= task-id (get % :task-id)))) subscribers)
                                :node-manager node-manager }))
-                nil))))
+                nil)))))
 (recur))))
 
 
@@ -223,7 +224,7 @@
         (spawn node manager cs))
       (recur))))
 
-(defn client-listener [manager socket]
+(defn client-listener [socket]
   (future
     (loop []
       (let [cs (listen socket)]
