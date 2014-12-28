@@ -51,7 +51,8 @@
                                                                      :info { :tds tds
                                                                             :host host
                                                                             :port port}})
-                                                :last-node-id (+ last-node-id 1) })))
+                                                :last-node-id (+ last-node-id 1) })
+                                   (! manager [:node last-node-id tds])))
           [:unknown from msg] (println "WAT")
           :else (println "Unknown message")))
       (recur))))
@@ -59,7 +60,7 @@
 (defsfn manager []
   (do
     (set-state! { :nodes [] :tasks [] :last-task-id 0 :сomplete-subtasks [] :subtasks [] :node-manager nil})
-    ; node    <- { id subtasks-number complete-subtasks-number threads-number }
+    ; node    <- { id subtasks threads-number }
     ; task    <- { id task-data }
     ; subtask <- { node-id id subid subtask-data }
     ; complete-subtask <- { id subid result }
@@ -84,15 +85,15 @@
                        :node-manager node-manager })
 
           [:register nm-ref]
-          (do
-          (println "registered new node-manager: " nm-ref)
-          (set-state! { :nodes nodes
-                       :tasks tasks
-                       :last-task-id last-task-id
-                       :complete-subtasks complete-subtasks
-                       :subtasks subtasks
-                       :subscribers subscribers
-                       :node-manager nm-ref }))
+          (do(
+              (println "registered new node-manager: " nm-ref)
+              (set-state! { :nodes nodes
+                           :tasks tasks
+                           :last-task-id last-task-id
+                           :complete-subtasks complete-subtasks
+                           :subtasks subtasks
+                           :subscribers subscribers
+                           :node-manager nm-ref })))
 
           [:new-task from task]
           (do
@@ -107,57 +108,71 @@
                          :subscribers subscribers
                          :node-manager node-manager })
 
-            (! from :task-id (- last-task-id 1))) ; send task id to client
+            (! from [:task-id last-task-id])) ; send task id to client
 
-          [:subtask id subid result]
+          [:subtask node-id id subid result]
           (let [filtered-tasks (filter #(not (= id (get % id))) tasks)
                 current-task (first (filter #(= id (get % id)) tasks))
                 ct-id (get :id current-task)
                 ct-st-number (get :st-number current-task)
-                ct-cst-number (+ 1 (get :cst-number current-task))]
+                ct-cst-number (+ 1 (get :cst-number current-task))
+
+                filtered-nodes (filter #(not (= node-id (get % :id) nodes)))
+                current-node (first (filter #(= node-id (get % :id)) nodes))
+                unode-id (get current-node :id)
+                unode-tds (get current-node :tds)
+                unode-sts (filter @(not (and (= id (get % :id)) (= subid (get % :subid)))) (get current-node :subtasks))]
             (do
-              (set-state! { :nodes nodes
+              (set-state! { :nodes (cons {:id unode-id :tds unode-tds :subtasks unode-sts } filtered-nodes)
                            :tasks (cons filtered-tasks { :id ct-id :st-number ct-st-number :cst-number ct-cst-number })
                            :last-task-id last-task-id
                            :complete-subtasks (cons complete-subtasks { :id id :sid subid :result result })
-                           :subtasks (filter #(and (= id (get % :id)) (= subid (get % :subid))) subtasks)
+                           :subtasks (filter #(not (and (= id (get % :id)) (= subid (get % :subid)))) subtasks)
                            :subscribers subscribers
                            :node-manager node-manager })
               (! @self [:check-complete])))
 
-            [:progress from task-id]
-            (let [task (first (filter #(= task-id (get % :id) tasks)))
-                  st-number (get task :st-number)
-                  cst-number (get task :cst-number)]
-              (! from [:progress (/ cst-number (double st-number))]))
+          [:progress from task-id]
+          (let [task (first (filter #(= task-id (get % :id) tasks)))
+                st-number (get task :st-number)
+                cst-number (get task :cst-number)]
+            (! from [:progress (/ cst-number (double st-number))]))
 
-            [:subscribe from task-id]
-            (do
-              (set-state! { :nodes nodes
-                           :tasks tasks
-                           :last-task-id last-task-id
-                           :complete-subtasks complete-subtasks
-                           :subtasks subtasks
-                           :subscribers (cons { :task-id task-id :subscriber from } subscribers)
-                           :node-manager node-manager })
-              (! @self [:check-complete]))
+          [:subscribe from task-id]
+          (do
+            (set-state! { :nodes nodes
+                         :tasks tasks
+                         :last-task-id last-task-id
+                         :complete-subtasks complete-subtasks
+                         :subtasks subtasks
+                         :subscribers (cons { :task-id task-id :subscriber from } subscribers)
+                         :node-manager node-manager })
+            (! @self [:check-complete]))
 
-            [:check-complete]
-            (doseq [s subscribers]
-              (let [subscriber (get s :subscriber)
-                    task-id (get s :task-id)
-                    task (first (filter #(= task-id (get % :id)) tasks))
-                    st-n (get task :st-number)
-                    cst-n (get task :cst-number)]
-                (if (= st-n cst-n) ; complete task was finded
-                  (let [css (filter #(= task-id (get % :id)) complete-subtasks)
-                        scss (sort #(compare (get %1 :sid) (get %2 :sid)) css)
-                        results (map #(get % :result) scss)]
-                    ; merge results of subtasks
-                    ; send result to subsriber
-                    nil)
-                  nil)))))
-        (recur))))
+          [:check-complete]
+          (doseq [s subscribers]
+            (let [subscriber (get s :subscriber)
+                  task-id (get s :task-id)
+                  task (first (filter #(= task-id (get % :id)) tasks))
+                  st-n (get task :st-number)
+                  cst-n (get task :cst-number)]
+              (if (= st-n cst-n) ; complete task was finded
+                (let [css (filter #(= task-id (get % :id)) complete-subtasks)
+                      scss (sort #(compare (get %1 :sid) (get %2 :sid)) css)
+                      results (map #(get % :result) scss)]
+                  ; merge results of subtasks
+                  ; send result to subsriber
+                  (set-state! { :nodes nodes
+                               :tasks tasks
+                               :last-task-id last-task-id
+                               :complete-subtasks (filter #(not (= task-id (get % :id))) complete-subtasks)
+                               :subtasks subtasks
+                               :subscribers (filter #(not (and
+                                                            (= subscriber (get % :subscriber))
+                                                            (= task-id (get % :task-id)))) subscribers)
+                               :node-manager node-manager }))
+                nil))))
+(recur))))
 
 
 
@@ -191,7 +206,7 @@
     ;; send queries to nodes here
     (println queries)))
 
-(defsfn client [socket]
+(defsfn client [manager socket]
   (let [umself @self
         frecv (spawn-fiber freceive umself  socket)]
     (do
@@ -208,7 +223,7 @@
         (spawn node manager cs))
       (recur))))
 
-(defn client-listener [socket]
+(defn client-listener [manager socket]
   (future
     (loop []
       (let [cs (listen socket)]
