@@ -4,7 +4,6 @@
   (:refer-clojure :exclude [promise await]))
 
 (def next-task-id (atom 0))
-
 (defsfn gen-next-task-id []
   swap! next-task-id inc)
 
@@ -15,13 +14,15 @@
 (defn freceive [from manager socket]
   (future
     (let [msg (srecv socket)
-          pmsg (json/read-str msg :key-fn keyword)]
+          pmsg (deserialize msg)]
       (do
         (println msg)
         (println pmsg)
         (println manager)
         (case (get pmsg :type)
           "register" (! manager [:register from pmsg])
+          "subtask"  (! manager [:subtask from pmsg])
+          "quit"  (! manager [:quit from pmsg])
           (! manager [:unknown from pmsg]))))))
 
 (defsfn node [manager socket]
@@ -34,6 +35,17 @@
       (join frecv)
       (sclose socket))))
 
+(defsfn client [manager socket]
+  (let [umself @self
+        frecv (spawn-fiber freceive umself  socket)]
+    (do
+      (receive
+        [:id id] (do
+                    (ssend socket (serialize {:type "id" :id id})))
+        [:ok] (do
+                (ssend socket (serialize {:type "ok"}))))
+      (join frecv)
+      (sclose socket))))
 
 (defsfn node-manager [manager]
   (do
@@ -53,6 +65,13 @@
                                                                             :port port}})
                                                 :last-node-id (+ last-node-id 1) })
                                    (! manager [:node last-node-id tds])))
+          [:subtask from msg] (do
+                                (let [node-id (get msg :node-id)
+                                      id (get msg :id)
+                                      subid (get msg :subid)
+                                      result (get msg :result)]
+                                  (! from [:ok])
+                                  (! manager node-id id subid result)))
           [:unknown from msg] (println "WAT")
           :else (println "Unknown message")))
       (recur))))
@@ -206,17 +225,6 @@
   (let [queries (client-req-gen from manager msg-type data)]
     ;; send queries to nodes here
     (println queries)))
-
-(defsfn client [manager socket]
-  (let [umself @self
-        frecv (spawn-fiber freceive umself  socket)]
-    (do
-      (receive
-        [:id msg] (do
-                    (ssend socket (str (str/join " " ["id" msg])))))
-      (join frecv)
-      (sclose socket))))
-
 (defn node-listener [manager socket]
   (future
     (loop []
