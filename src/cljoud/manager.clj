@@ -11,7 +11,7 @@
   (let [serialized-params params]
     (serialize [:request [tid func-name func-code serialized-params]])))
 
-(defn freceive [from manager socket]
+(defn node-receive [from manager socket]
   (future
     (let [msg (srecv socket)
           pmsg (deserialize msg)]
@@ -27,7 +27,7 @@
 
 (defsfn node [manager socket]
   (let [umself @self
-        frecv (spawn-fiber freceive umself manager socket)]
+        frecv (spawn-fiber node-receive umself manager socket)]
     (do
       (receive 
         [:id msg] (do
@@ -37,7 +37,7 @@
 
 (defsfn client [manager socket]
   (let [umself @self
-        frecv (spawn-fiber freceive umself  socket)]
+        frecv (spawn-fiber node-receive umself  socket)]
     (do
       (receive
         [:id id] (do
@@ -57,7 +57,7 @@
           [:register from msg] (do
                                  (let [tds (get msg :threads)
                                        host (get msg :host)
-                                       port (read-string (get msg :port))]
+                                       port (get msg :port)]
                                    (! from [:id last-node-id])
                                    (set-state! { :nodes (cons nodes { :id last-node-id
                                                                      :info { :tds tds
@@ -72,6 +72,17 @@
                                       result (get msg :result)]
                                   (! from [:ok])
                                   (! manager node-id id subid result)))
+
+          [:send-subtask node-id id subid subtask]
+          (let [node (first (filter #(= node-id (get % :id)) nodes))
+                node-info (get node :info)
+                host (get node-info :host)
+                port (get node-info :port)
+                socket (create-client-socket host port)]
+            (do
+              (ssend socket (serialize {:id id :subid subid :subtask subtask}))
+              (sclose socket)))
+
           [:unknown from msg] (println "WAT")
           :else (println "Unknown message")))
       (recur))))
