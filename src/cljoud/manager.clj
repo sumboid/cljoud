@@ -47,8 +47,6 @@
       (receive 
         [:id id] (do
                     (ssend socket (serialize {:type "id" :id id})))
-        [:subtask id] (do
-                    (ssend socket (serialize {:type "id" :id id})))
         [:ok] (do
                 (ssend socket (serialize {:type "ok"}))))
       (join frecv)
