@@ -22,7 +22,6 @@
         (println manager)
         (case (get pmsg :type)
           "register" (! manager [:register from pmsg])
-          "task" 
           (! manager [:unknown from pmsg]))))))
 
 (defsfn node [manager socket]
@@ -85,13 +84,15 @@
                        :node-manager node-manager })
 
           [:register nm-ref]
+          (do
+          (println "registered new node-manager: " nm-ref)
           (set-state! { :nodes nodes
                        :tasks tasks
                        :last-task-id last-task-id
                        :complete-subtasks complete-subtasks
                        :subtasks subtasks
                        :subscribers subscribers
-                       :node-manager nm-ref })
+                       :node-manager nm-ref }))
 
           [:new-task from task]
           (do
@@ -125,7 +126,7 @@
               (! @self [:check-complete])))
 
             [:progress from task-id]
-            (let [task (first (filter #(= id (get % id) tasks)))
+            (let [task (first (filter #(= task-id (get % :id) tasks)))
                   st-number (get task :st-number)
                   cst-number (get task :cst-number)]
               (! from [:progress (/ cst-number (double st-number))]))
@@ -149,7 +150,7 @@
                     st-n (get task :st-number)
                     cst-n (get task :cst-number)]
                 (if (= st-n cst-n) ; complete task was finded
-                  (let [css (filter #(= task-id (get % :id)) complete-subtask)
+                  (let [css (filter #(= task-id (get % :id)) complete-subtasks)
                         scss (sort #(compare (get %1 :sid) (get %2 :sid)) css)
                         results (map #(get % :result) scss)]
                     ; merge results of subtasks
@@ -216,12 +217,14 @@
 
 
 (defn -main [& args]
-  (let [nm (spawn node-manager)
+  (let [m (spawn manager)
+        nm (spawn node-manager m)
         nl-soc (create-server-socket 8000)
         nl (spawn-fiber node-listener nm nl-soc)
         client-soc (create-server-socket 8080)
         cl (spawn-fiber client-listener client-soc)]
     (do
+      (join m)
       (join nm)
       (join nl)
       (join cl))))
