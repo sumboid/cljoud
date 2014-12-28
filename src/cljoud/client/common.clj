@@ -9,9 +9,9 @@
 (defn- handle-valid-response [response]
   (let [[code data] (second response)]
     (case code
-      :success {:result (deserialize data)}
+      :success {:result data}
       :not-found {:cause {:error code}}
-      :exception {:cause {:error code :exception (deserialize data)}}
+      :exception {:cause {:error code :exception data}}
       {:cause {:error :invalid-result-code}})))
 (defn- next-trans-id [trans-id-gen]
   (swap! trans-id-gen unchecked-inc))
@@ -35,8 +35,8 @@
   (sync-call-remote [this func-name func-code params]
     (let [ tid 0
            request (make-request tid func-name func-code params)]
-      (ssend conn (str request));; <- TODO
-      (let [msg (srecv conn)
+      (ssend conn (str request))
+      (let [msg (deserialize (srecv conn))
             tid (first msg)
             msg-body (second msg)
             result (handle-response msg-body)]
