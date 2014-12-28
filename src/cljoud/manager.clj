@@ -175,7 +175,7 @@
                            node (first new-load-sorted-nodes)]
                              (if (= 0 (count tail))
                                (do (println "work distributed, generated " subtasks-n " subtasks")
-                                   subtasks)
+                                   subtasks-n)
                                (let [workslots (:tds node)
                                      len (min workslots (count tail))
                                      collpart (take len tail)

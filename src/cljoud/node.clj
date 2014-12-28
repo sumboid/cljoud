@@ -72,7 +72,7 @@
           (set-state! { :workers workers
                        :node-id nid
                        :subtasks subtasks }))
-
+                                                                                           ну
           [:try-execute]
           (do
           (let [fworkers (filter #(= false (second %)) workers)]
