@@ -22,32 +22,51 @@
     :type-error {:cause {:error (-> response second first)}}
     nil))
 
-(defn make-request [tid func-name func-code params]
-  (let [serialized-params (serialize params)]
-    (serialize [:type-request [tid func-name func-code params]])))
+(defn make-request [func-name func-code params]
+    (serialize {:type "task" :task [func-name func-code params]}))
 
 (defprotocol ClientProtocol
+  (connect[this])
+  (async-call-remote [this func-name func-code params])
   (sync-call-remote [this func-name func-code params])
-  (close [this]))
+  (check-progress [this])
+  (request-result [this]))
 
-(deftype Client [conn]
+(deftype Client [addr task-id]
   ClientProtocol
-  (sync-call-remote [this func-name func-code params]
-    (let [ tid 0
-           request (make-request tid func-name func-code params)]
+  (connect[this]
+    (let [[host port] (host-port addr)]
+          (create-client-socket host port)))
+  (async-call-remote [this func-name func-code params]
+    (let [ conn (connect this)
+           request (make-request func-name func-code params)]
       (ssend conn (str request))
+      (let [msg (deserialize (srecv conn) )
+            tid (get msg :task-id)]
+        (reset! task-id tid)
+        (sclose conn))))
+  (sync-call-remote [this func-name func-code params]
+    (do
+      (async-call-remote this func-name func-code params)
+      (request-result this)))
+  (check-progress[this]
+    (let [ conn (connect this)
+           request (serialize {:type "progress" :task-id @task-id})]
+      (ssend conn request)
       (let [msg (deserialize (srecv conn))
-            tid (first msg)
-            msg-body (second msg)
-            result (handle-response msg-body)]
-        result)))
-  (close [this]
-    (close conn)))
+            progress (get msg :progress)]
+        (sclose conn)
+        progress)))
+  (request-result [this]
+    (let [ conn (connect this)
+           request (serialize {:type "subscribe" :task-id @task-id})]
+      (ssend conn request)
+      (let [msg (deserialize (srecv conn))
+            result (handle-response msg)]
+        (sclose conn)
+        result))))
 
 (defn create-client [addr]
-  (do
-    (println "Creating client in " addr)
-  (let [[host port] (host-port addr)
-        client (create-client-socket host port)
-        cljoud-client (Client. client)]
-      cljoud-client)))
+  (let [task-id (atom "")]
+    (println "Creating client for " addr)
+    (Client. addr task-id)))
