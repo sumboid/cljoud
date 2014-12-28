@@ -54,7 +54,7 @@
       (join frecv)
       (sclose socket))))
 
-(defsfn node [manager socket]
+(defsfn client [manager socket]
   (let [umself @self
         frecv (spawn-fiber client-receive umself manager socket)]
     (do
@@ -65,19 +65,6 @@
                     (ssend socket (serialize result))) ; serializes result
         [:progress task-id progress] (do
                                (ssend socket (serialize {:task-id task-id :progress progress}))))
-      (join frecv)
-      (sclose socket))))
-
-
-(defsfn client [manager socket]
-  (let [umself @self
-        frecv (spawn-fiber client-receive umself  socket)]
-    (do
-      (receive
-        [:task-id id] (do
-                    (ssend socket (serialize {:task-id id :id id})))
-        [:ok] (do
-                (ssend socket (serialize {:type "ok"}))))
       (join frecv)
       (sclose socket))))
 
@@ -277,11 +264,11 @@
         (spawn node manager cs))
       (recur))))
 
-(defn client-listener [socket]
+(defn client-listener [manager socket]
   (future
     (loop []
       (let [cs (listen socket)]
-        (spawn client cs))
+        (spawn client manager cs))
       (recur))))
 
 
@@ -291,7 +278,7 @@
         nl-soc (create-server-socket 8000)
         nl (spawn-fiber node-listener nm nl-soc)
         client-soc (create-server-socket 8080)
-        cl (spawn-fiber client-listener client-soc)]
+        cl (spawn-fiber client-listener m client-soc)]
     (do
       (join m)
       (join nm)
