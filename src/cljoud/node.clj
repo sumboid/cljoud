@@ -77,7 +77,7 @@
           (do
           (let [fworkers (filter #(= false (second %)) workers)]
             (doseq [w fworkers]
-              (if-let [subtask (first subtasks)]
+              (if-let [subtask (first (get @state :subtasks))]
                 (let [id (get subtask :id)
                        sid (get subtask :sid)
                        st (get subtask :subtask)
@@ -85,8 +85,8 @@
                        current-worker (first (filter #(= (first w) (first %)) workers))]
                 (! (first w) [:subtask id sid st])
                 (set-state! { :workers (cons  [(first current-worker) true] filtered-workers)
-                             :node-id node-id
-                             :subtasks (filter #(not (= id (get % :id))) subtasks) }))))))
+                              :node-id node-id
+                              :subtasks (filter #(not (= id (get % :id))) subtasks) }))))))
           [:ok] nil)
     (recur)))))
 
