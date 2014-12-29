@@ -23,8 +23,9 @@
   [sc remote-call-info async]
   (let [[fname fcode args] remote-call-info]
     (if async
-       (do (async-call-remote sc fname fcode args)
-           sc)
+       (do
+         (async-call-remote sc fname fcode args)
+         sc)
        (process-call-result (sync-call-remote sc fname fcode args)))))
 
 (defn rmap[f coll]

@@ -167,10 +167,9 @@
                                               len (min workslots (count tail))
                                               collpart (take len tail)
                                               subtask [fname fcode collpart]]
-                                              (println "COLLPART " collpart)
                                               (! node-manager [:send-subtask (:id node) last-task-id subtasks-n subtask]) ;; node-id, id, subid, subtask
-                                          (recur (rest s-nodes) (drop len tail) (inc subtasks-n))))))]
-                  (loop [tail extra-coll subtasks-n stasks-n]
+                                          (recur (rest s-nodes) (drop len tail) (inc subtasks-n))))))
+                  subt-n (loop [tail extra-coll subtasks-n stasks-n]
                     (let [new-load-sorted-nodes (sort-by #(count (:subtasks %1)) nodes)
                            node (first new-load-sorted-nodes)]
                              (if (= 0 (count tail))
@@ -181,15 +180,15 @@
                                      collpart (take len tail)
                                      subtask [fname fcode collpart]]
                                   (! node-manager [:send-subtask (:id node) last-task-id subtasks-n subtask])
-                                 (recur (drop len tail) (inc subtasks-n)))))))
+                                 (recur (drop len tail) (inc subtasks-n))))))]
 
             (set-state! { :nodes nodes
-                         :tasks tasks
+                         :tasks (cons  { :id last-task-id :st-number subt-n :cst-number 0 } tasks)
                          :last-task-id (+ 1 last-task-id)
                          :complete-subtasks complete-subtasks
                          :subtasks subtasks
                          :subscribers subscribers
-                         :node-manager node-manager })
+                         :node-manager node-manager }))
 
             (! from [:task-id last-task-id])) ; send task id to client
 
@@ -207,9 +206,9 @@
                 unode-sts (filter #(not (and (= id (get % :id)) (= subid (get % :subid)))) (get current-node :subtasks))]
             (do
               (set-state! { :nodes (cons {:id unode-id :tds unode-tds :subtasks unode-sts } filtered-nodes)
-                           :tasks (cons filtered-tasks { :id ct-id :st-number ct-st-number :cst-number ct-cst-number })
+                           :tasks (cons  { :id ct-id :st-number ct-st-number :cst-number ct-cst-number } filtered-tasks)
                            :last-task-id last-task-id
-                           :complete-subtasks (cons complete-subtasks { :id id :sid subid :result result })
+                           :complete-subtasks (cons { :id id :sid subid :result result } complete-subtasks)
                            :subtasks (filter #(not (and (= id (get % :id)) (= subid (get % :subid)))) subtasks)
                            :subscribers subscribers
                            :node-manager node-manager })
@@ -239,12 +238,12 @@
                   task (first (filter #(= task-id (get % :id)) tasks))
                   st-n (get task :st-number)
                   cst-n (get task :cst-number)]
-              (if (= st-n cst-n) ; complete task was finded
+              (if (= st-n cst-n) ; complete task found
                 (let [css (filter #(= task-id (get % :id)) complete-subtasks)
                       scss (sort #(compare (get %1 :sid) (get %2 :sid)) css)
-                      results (map #(get % :result) scss)]
-                  ; merge results of subtasks
-                  ; send result to subsriber
+                      results (map #(get % :result) scss)
+                      result (reduce (fn [acc x] (concat x acc)) results)]
+                  (! subscriber [:result result])
                   (set-state! { :nodes nodes
                                :tasks tasks
                                :last-task-id last-task-id
