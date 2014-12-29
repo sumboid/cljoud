@@ -36,18 +36,22 @@
   (async-call-remote [this func-name func-code params]
     (let [ conn (connect this)
            request (make-request func-name func-code params)]
-      (ssend conn (str request))
+      (ssend conn request)
+      ;;(println "Request sent")
       (let [msg (deserialize (srecv conn) )
-            tid (get msg :task-id)]
+            tid (get msg :id)]
+        ;;(println "Taskid received" tid)
         (reset! task-id tid)
         (sclose conn))))
   (sync-call-remote [this func-name func-code params]
-    (do
-      (async-call-remote this func-name func-code params)
-      (request-result this)))
+    (let [c (async-call-remote this func-name func-code params)
+          sleep (Thread/sleep 1000)
+          result (request-result this)]
+        result))
   (check-progress[this]
     (let [ conn (connect this)
            request (serialize {:type "progress" :task-id @task-id})]
+      ;;(println "check-progress:" @task-id)
       (ssend conn request)
       (let [msg (deserialize (srecv conn))
             progress (get msg :progress)]
@@ -56,6 +60,7 @@
   (request-result [this]
     (let [ conn (connect this)
            request (serialize {:type "subscribe" :task-id @task-id})]
+      ;;(println "request-result:" @task-id)
       (ssend conn request)
       (let [msg (deserialize (srecv conn))
             result (handle-response msg)]

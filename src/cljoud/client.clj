@@ -9,9 +9,7 @@
   (create-client addr))
 
 (defn process-call-result [call-result]
-  (if (nil? (:cause call-result))
-    (:result call-result)))
-
+    call-result)
 (defn join [sc]
   (request-result sc))
 (defn get-progress[sc]

@@ -57,8 +57,8 @@
                    (ssend socket (serialize {:type "id" :id id})))
         [:result result] (do
                     (ssend socket (serialize {:type "response" :data result}))) ; serializes result
-        [:progress task-id progress] (do
-                               (ssend socket (serialize {:task-id task-id :progress progress}))))
+        [:progress task-id progress] (do (println "SENDING PROGRESS " progress)
+                             (ssend socket (serialize {:type "progress" :task-id task-id :progress progress}))))
       (join frecv)
       (sclose socket))))
 
@@ -87,7 +87,7 @@
                                       subid (get msg :subid)
                                       result (get msg :result)]
                                   (! from [:ok])
-                                  (! manager node-id id subid result)))
+                                  (! manager [:subtask node-id id subid result])))
 
           [:send-subtask node-id id subid subtask]
           (do
@@ -182,7 +182,7 @@
                                   (! node-manager [:send-subtask (:id node) last-task-id subtasks-n subtask])
                                  (recur (drop len tail) (inc subtasks-n))))))]
 
-            (set-state! { :nodes nodes
+            (set-state! {:nodes nodes
                          :tasks (cons  { :id last-task-id :st-number subt-n :cst-number 0 } tasks)
                          :last-task-id (+ 1 last-task-id)
                          :complete-subtasks complete-subtasks
@@ -190,16 +190,16 @@
                          :subscribers subscribers
                          :node-manager node-manager }))
 
-            (! from [:task-id last-task-id])) ; send task id to client
+            (! from [:id last-task-id])) ; send task id to client
 
           [:subtask node-id id subid result]
-          (let [filtered-tasks (filter #(not (= id (get % id))) tasks)
-                current-task (first (filter #(= id (get % id)) tasks))
-                ct-id (get :id current-task)
-                ct-st-number (get :st-number current-task)
-                ct-cst-number (+ 1 (get :cst-number current-task))
+          (let [filtered-tasks (filter #(not (= id (get % :id))) tasks)
+                current-task (first (filter #(= id (get % :id)) tasks))
+                ct-id (get current-task :id)
+                ct-st-number (get current-task :st-number)
+                ct-cst-number (+ 1 (get current-task :cst-number))
 
-                filtered-nodes (filter #(not (= node-id (get % :id) nodes)))
+                filtered-nodes (filter #(not (= node-id (get % :id))) nodes)
                 current-node (first (filter #(= node-id (get % :id)) nodes))
                 unode-id (get current-node :id)
                 unode-tds (get current-node :tds)
@@ -216,10 +216,10 @@
               (! @self [:check-complete])))
 
           [:progress from task-id]
-          (let [task (first (filter #(= task-id (get % :id) tasks)))
+          (let [task (first (filter #(= task-id (get % :id)) tasks))
                 st-number (get task :st-number)
                 cst-number (get task :cst-number)]
-            (! from [:progress (/ cst-number (double st-number))]))
+            (! from [:progress task-id (/ cst-number (double st-number))]))
 
           [:subscribe from task-id]
           (do
@@ -243,7 +243,7 @@
                   cst-n (get task :cst-number)]
               (if (= st-n cst-n) ; complete task found
                 (let [css (filter #(= task-id (get % :id)) complete-subtasks)
-                      scss (sort #(compare (get %1 :sid) (get %2 :sid)) css)
+                      scss (sort #(compare (get %2 :sid) (get %1 :sid)) css)
                       results (map #(get % :result) scss)
                       result (reduce (fn [acc x] (concat x acc)) results)]
                   (! subscriber [:result result])

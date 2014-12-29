@@ -13,7 +13,7 @@
   (eval (read-string func-code))
   (let [result (map (fn [x] (call func-name x)) params)]
     (remove-ns 'user)
-    (println result)
+    ;(println result)
     result))
 
 (defn handle-request [msg]
@@ -23,18 +23,20 @@
     (do-map func-name func-code params)))
 
 (defsfn worker [node]
-  (loop []
-    (receive
-      [:subtask id sid subtask]
-      (let [result (handle-request subtask)]
-        (! node [:res @self id sid result])))
-    (recur)))
+    (loop []
+      (receive
+        [:subtask id sid subtask]
+        (let [result (handle-request subtask)]
+          (! node [:res @self id sid result])
+          (! node [:try-execute])))
+      (recur)))
 
 (defsfn node [host port threads listening_port listening_host]
   (do
-    (set-state! { :workers (map (fn [x] [(spawn worker @self) false]) (repeat threads 0))
-                 :node-id 0
-                 :subtasks []})
+    (let [umself @self]
+      (set-state! {:workers (map (fn [x] [(spawn worker umself) false]) (repeat threads 0))
+                   :node-id 0
+                   :subtasks []}))
     (let [socket (create-client-socket host port)]
       (ssend socket (serialize { :type "register"
                                 :threads  threads
@@ -49,7 +51,9 @@
           (let [socket (create-client-socket host port)
                 filtered-workers (filter #(not (= f (first %))) workers)
                 current-worker (first (filter #(= f (first %)) workers))]
-            (ssend socket (serialize {:node-id node-id
+            (println "send subtask to manager:" id sid)
+            (ssend socket (serialize {:type "subtask"
+                                      :node-id node-id
                                       :id id
                                       :subid sid
                                       :result result }))
@@ -76,21 +80,41 @@
           (do
             (let [fws (map #(first %) (filter #(= false (second %)) workers))
                   sts (get @state :subtasks)
-                  dist (map vector fws sts)]
-              (println dist)
+                  dist (map vector fws sts)
+
+                  cfws (map #(first %) dist)
+                  csts (map #(last %) dist)
+
+                  fcfws (filter (fn [x]
+                                  (empty?
+                                    (filter
+                                      (fn [y] (= y (first x))) cfws))) workers)
+
+                  fcsts (filter (fn [x]
+                                  (empty?
+                                    (filter
+                                      (fn [y]
+                                        (and
+                                          (= (get x :id) (get y :id))
+                                          (= (get x :sid) (get y :sid))
+                                          )
+                                        )
+                                      csts))) (get @state :subtasks)) ]
+              (println @state)
+              (set-state! { :workers (concat fcfws (map #(vector % true) fws))
+                           :node-id node-id
+                           :subtasks fcsts })
+              (println "dist:" dist)
               (doseq [[w s] dist]
                 (let [id (get s :id)
                       sid (get s :sid)
                       st (get s :subtask)
                       filtered-workers (filter #(not (= w (first %))) workers)
                       current-worker (first (filter #(= w (first %)) workers))]
-                  (! w [:subtask id sid st])
-                  (set-state! { :workers (cons  [(first current-worker) true] filtered-workers)
-                               :node-id node-id
-                               :subtasks (filter #(not (and (= id (get % :id) (= sid (get % :sid))))) subtasks) })))))))
+                  (println "st:" id sid st)
+                  (! w [:subtask id sid st])))))
+          :else (println "WAT")))
       (recur))))
-
-
 
 (defsfn link [manager socket]
   (future
@@ -116,7 +140,7 @@
 (defn -main [& args]
   (let [ listening_port 7777
         listening_host "localhost"
-        n (spawn node "localhost" 8000 4 listening_port listening_host)
+        n (spawn node "localhost" 8000 1 listening_port listening_host)
         l-soc (create-server-socket listening_port)
         l (spawn-fiber listener n l-soc)]
     (do
