@@ -6,7 +6,7 @@
   (defn-remote client cljoud.example.api/dec-m :async? true)
 (catch Exception e (str "caught exception: " (.getMessage e))))
 
-(def m [1 2 3 4 5 6])
+(def m [1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16])
 (defn -main [& args]
   (println "Applying map() to " m)
 

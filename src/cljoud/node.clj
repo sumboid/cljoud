@@ -138,10 +138,13 @@
       (recur))))
 
 (defn -main [& args]
-  (let [ listening_port 7777
-        listening_host "localhost"
-        n (spawn node "localhost" 8000 1 listening_port listening_host)
-        l-soc (create-server-socket listening_port)
+  (let [listening-port (read-string (nth args 1))
+        listening-host (nth args 0)
+        manager-host (nth args 2)
+        manager-port (read-string (nth args 3))
+        threads (read-string (nth args 4))
+        n (spawn node manager-host manager-port threads listening-port listening-host)
+        l-soc (create-server-socket listening-port)
         l (spawn-fiber listener n l-soc)]
     (do
       (join n)

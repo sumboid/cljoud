@@ -159,30 +159,35 @@
                   fname (get task 0)
                   fcode (get task 1)
                   coll (first  (get task 2))
-                  [extra-coll stasks-n] (loop [s-nodes load-sorted-nodes tail coll subtasks-n 0]    ;; Part of collection which is still here after using all available slots
+                  [extra-coll stasks-n node-state] (loop [s-nodes load-sorted-nodes tail coll subtasks-n 0 node-states nodes]    ;; Part of collection which is still here after using all available slots
                                           (let [node (first s-nodes)]
                                             (if (or (or (= nil node) (= 0 (count tail) (> (:subtasks node (:tds node))))))
-                                              [tail subtasks-n]
+                                              [tail subtasks-n node-states]
                                             (let [workslots (- (:tds node) (count (:subtasks node)))
                                               len (min workslots (count tail))
                                               collpart (take len tail)
-                                              subtask [fname fcode collpart]]
+                                              subtask [fname fcode collpart]
+                                              filtered-nodes (filter #(not (= node %)) node-states)
+                                              new-node {:id (:id node) :tds (:tds node) :subtasks (cons subtask (:subtasks node))}]
                                               (! node-manager [:send-subtask (:id node) last-task-id subtasks-n subtask]) ;; node-id, id, subid, subtask
-                                          (recur (rest s-nodes) (drop len tail) (inc subtasks-n))))))
-                  subt-n (loop [tail extra-coll subtasks-n stasks-n]
-                    (let [new-load-sorted-nodes (sort-by #(count (:subtasks %1)) nodes)
-                           node (first new-load-sorted-nodes)]
+                                          (recur (rest s-nodes) (drop len tail) (inc subtasks-n) (cons new-node filtered-nodes))))))
+                  [subt-n new-nodes-state] (loop [tail extra-coll subtasks-n stasks-n ss-nodes node-state]
+                                            (let [new-load-sorted-nodes (sort-by #(count (:subtasks %1)) ss-nodes)
+                                                  node (first new-load-sorted-nodes)]
                              (if (= 0 (count tail))
                                (do (println "work distributed, generated " subtasks-n " subtasks")
-                                   subtasks-n)
+                                   [subtasks-n ss-nodes])
                                (let [workslots (:tds node)
                                      len (min workslots (count tail))
                                      collpart (take len tail)
-                                     subtask [fname fcode collpart]]
+                                     subtask [fname fcode collpart]
+                                     filtered-nodes (filter #(not (= node %)) ss-nodes)
+                                     new-node {:id (:id node) :tds (:tds node) :subtasks (cons subtask (:subtasks node))}]
+                                   
                                   (! node-manager [:send-subtask (:id node) last-task-id subtasks-n subtask])
-                                 (recur (drop len tail) (inc subtasks-n))))))]
+                                 (recur (drop len tail) (inc subtasks-n) (cons new-node filtered-nodes))))))]
 
-            (set-state! {:nodes nodes
+            (set-state! {:nodes new-nodes-state
                          :tasks (cons  { :id last-task-id :st-number subt-n :cst-number 0 } tasks)
                          :last-task-id (+ 1 last-task-id)
                          :complete-subtasks complete-subtasks
