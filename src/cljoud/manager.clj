@@ -206,6 +206,7 @@
                 unode-tds (get current-node :tds)
                 unode-sts (filter #(not (and (= id (get % :id)) (= subid (get % :subid)))) (get current-node :subtasks))]
             (do
+              (println "Recv result:" result)
               (set-state! { :nodes (cons {:id unode-id :tds unode-tds :subtasks unode-sts } filtered-nodes)
                            :tasks (cons filtered-tasks { :id ct-id :st-number ct-st-number :cst-number ct-cst-number })
                            :last-task-id last-task-id
@@ -223,6 +224,7 @@
 
           [:subscribe from task-id]
           (do
+            (println "subscribe: " from task-id)
             (set-state! { :nodes nodes
                          :tasks tasks
                          :last-task-id last-task-id
@@ -234,6 +236,7 @@
 
           [:check-complete]
           (doseq [s subscribers]
+            (println "Subscriber: " subscribers)
             (let [subscriber (get s :subscriber)
                   task-id (get s :task-id)
                   task (first (filter #(= task-id (get % :id)) tasks))
@@ -243,6 +246,7 @@
                 (let [css (filter #(= task-id (get % :id)) complete-subtasks)
                       scss (sort #(compare (get %1 :sid) (get %2 :sid)) css)
                       results (map #(get % :result) scss)]
+                  (println "Results:" results)
                   ; merge results of subtasks
                   ; send result to subsriber
                   (set-state! { :nodes nodes

@@ -3,21 +3,21 @@
   (:refer-clojure :exclude [promise await]))
 
 (defn call [^String nm & args]
-    (when-let [fun (ns-resolve *ns* (symbol nm))]
-        (apply fun args)))
+  (when-let [fun (ns-resolve *ns* (symbol nm))]
+    (apply fun args)))
 
 (defn do-map[func-name func-code params]
   (create-ns 'user)
   ;;(binding [*ns* 'user]
-    ;(intern 'user (symbol func-name)
-    (eval (read-string func-code))
-    (let [result (map (fn [x] (call func-name x)) params)]
-      (remove-ns 'user)
-      (println result)
+  ;(intern 'user (symbol func-name)
+  (eval (read-string func-code))
+  (let [result (map (fn [x] (call func-name x)) params)]
+    (remove-ns 'user)
+    (println result)
     result))
 
 (defn handle-request [msg]
- (let [func-name (first msg)
+  (let [func-name (first msg)
         func-code (nth msg 1)
         params (nth msg 2)]
     (do-map func-name func-code params)))
@@ -27,13 +27,13 @@
     (receive
       [:subtask id sid subtask]
       (let [result (handle-request subtask)]
-        (! node [:result @self id sid result])))
-      (recur)))
+        (! node [:res @self id sid result])))
+    (recur)))
 
 (defsfn node [host port threads listening_port listening_host]
   (do
     (set-state! { :workers (map (fn [x] [(spawn worker @self) false]) (repeat threads 0))
-                 :node-id 0 
+                 :node-id 0
                  :subtasks []})
     (let [socket (create-client-socket host port)]
       (ssend socket (serialize { :type "register"
@@ -41,11 +41,11 @@
                                 :host listening_host
                                 :port listening_port })))
     (loop []
-      (let [workers (get @state :workers)
-            node-id (get @state :node-id)
+      (let [workers  (get @state :workers)
+            node-id  (get @state :node-id)
             subtasks (get @state :subtasks)]
         (receive
-          [:result f id sid result]
+          [:res f id sid result]
           (let [socket (create-client-socket host port)
                 filtered-workers (filter #(not (= f (first %))) workers)
                 current-worker (first (filter #(= f (first %)) workers))]
@@ -53,14 +53,14 @@
                                       :id id
                                       :subid sid
                                       :result result }))
-            (set-state! { :workers (cons [(first current-worker) false] filtered-workers) 
-                         :node-id node-id
+            (set-state! { :workers  (cons [(first current-worker) false] filtered-workers) 
+                         :node-id  node-id
                          :subtasks subtasks })
             (! @self [:try-execute]))
 
           [:subtask id sid subtask]
           (do
-            ;;(println "Subtask recieved id " id ", sid " sid ", content " subtask)
+            (println "Subtask recieved id " id ", sid " sid ", content " subtask)
             (set-state! { :workers workers
                          :node-id node-id
                          :subtasks (cons { :id id :sid sid :subtask subtask } subtasks) })
@@ -69,26 +69,26 @@
           [:id nid]
           (do
             (println "id received " nid)
-          (set-state! { :workers workers
-                       :node-id nid
-                       :subtasks subtasks }))
-                                                                                           ну
+            (set-state! { :workers workers
+                         :node-id nid
+                         :subtasks subtasks }))
           [:try-execute]
           (do
-          (let [fworkers (filter #(= false (second %)) workers)]
-            (doseq [w fworkers]
-              (if-let [subtask (first (get @state :subtasks))]
-                (let [id (get subtask :id)
-                       sid (get subtask :sid)
-                       st (get subtask :subtask)
-                       filtered-workers (filter #(not (= (first w) (first %))) workers)
-                       current-worker (first (filter #(= (first w) (first %)) workers))]
-                (! (first w) [:subtask id sid st])
-                (set-state! { :workers (cons  [(first current-worker) true] filtered-workers)
-                              :node-id node-id
-                              :subtasks (filter #(not (= id (get % :id))) subtasks) }))))))
-          [:ok] nil)
-    (recur)))))
+            (let [fws (map #(first %) (filter #(= false (second %)) workers))
+                  sts (get @state :subtasks)
+                  dist (map vector fws sts)]
+              (println dist)
+              (doseq [[w s] dist]
+                (let [id (get s :id)
+                      sid (get s :sid)
+                      st (get s :subtask)
+                      filtered-workers (filter #(not (= w (first %))) workers)
+                      current-worker (first (filter #(= w (first %)) workers))]
+                  (! w [:subtask id sid st])
+                  (set-state! { :workers (cons  [(first current-worker) true] filtered-workers)
+                               :node-id node-id
+                               :subtasks (filter #(not (and (= id (get % :id) (= sid (get % :sid))))) subtasks) })))))))
+      (recur))))
 
 
 
@@ -115,8 +115,8 @@
 
 (defn -main [& args]
   (let [ listening_port 7777
-         listening_host "localhost"
-         n (spawn node "localhost" 8000 4 listening_port listening_host)
+        listening_host "localhost"
+        n (spawn node "localhost" 8000 4 listening_port listening_host)
         l-soc (create-server-socket listening_port)
         l (spawn-fiber listener n l-soc)]
     (do
