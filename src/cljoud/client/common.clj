@@ -7,19 +7,15 @@
             TimeUnit ScheduledFuture]))
 
 (defn- handle-valid-response [response]
-  (let [[code data] (second response)]
-    (case code
-      :success {:result data}
-      :not-found {:cause {:error code}}
-      :exception {:cause {:error code :exception data}}
-      {:cause {:error :invalid-result-code}})))
+  (let [data (get response :data)]
+    data))
 (defn- next-trans-id [trans-id-gen]
   (swap! trans-id-gen unchecked-inc))
 
 (defn handle-response [response]
-  (case (first response)
-    :type-response (handle-valid-response response)
-    :type-error {:cause {:error (-> response second first)}}
+  (case (get response :type)
+    "response" (handle-valid-response response)
+    "error" {:error (:data response)}
     nil))
 
 (defn make-request [func-name func-code params]

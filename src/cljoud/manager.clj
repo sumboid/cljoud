@@ -56,7 +56,7 @@
         [:id id] (do
                    (ssend socket (serialize {:type "id" :id id})))
         [:result result] (do
-                    (ssend socket (serialize result))) ; serializes result
+                    (ssend socket (serialize {:type "response" :data result}))) ; serializes result
         [:progress task-id progress] (do
                                (ssend socket (serialize {:task-id task-id :progress progress}))))
       (join frecv)
